@@ -1,0 +1,17 @@
+{
+  "name": "シノトレ",
+  "short_name": "シノトレ",
+  "description": "Synonym Quiz（Core・Basic）のシノニムから英単語を答える練習アプリ。日本語の意味つき、苦手を優先して出題",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F2F2F7",
+  "theme_color": "#F2F2F7",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
