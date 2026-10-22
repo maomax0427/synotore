@@ -272,3 +272,8 @@ body.lock { overflow: hidden; }
 .toast { position: fixed; z-index: 60; left: 50%; top: calc(var(--st) + 14px); transform: translateX(-50%); background: rgba(20,20,24,.92); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; font-weight: 600; max-width: calc(100% - 32px); animation: fade .2s; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes up { from { transform: translateY(14px); opacity: 0; } }
+.warn { padding: 14px 16px; margin-bottom: 12px; background: var(--gold-soft); }
+.warn b { color: var(--gold); }
+.warn p { margin: 4px 0 0; font-size: 13.5px; }
+a.btn { text-decoration: none; }
+.bk { width: 100%; margin-top: 10px; border: 0; border-radius: 10px; background: var(--field); padding: 10px; font-size: 16px; font-family: ui-monospace, Menlo, monospace; resize: vertical; }

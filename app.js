@@ -33,18 +33,50 @@ const fmtClock = sec => `${Math.floor(sec / 60)}:${pad2(sec % 60)}`;
 function blank() {
   return {
     v: 1, w: {}, day: {}, tests: {},
-    cfg: { testDate: TEST_DEFAULT, sets: SETS.map(s => s.id), style: 'auto', prompt: 'syn', order: 'weak', count: 10, autoSpeak: false },
+    cfg: { pv: 2, testDate: TEST_DEFAULT, sets: SETS.map(s => s.id), style: 'auto', prompt: 'both', order: 'weak', count: 10, autoSpeak: false },
   };
 }
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && s.v === 1) { const b = blank(); return Object.assign(b, s, { cfg: Object.assign(b.cfg, s.cfg) }); }
+    if (s && s.v === 1) {
+      const b = blank(), r = Object.assign(b, s, { cfg: Object.assign(b.cfg, s.cfg) });
+      // 最初の版はシノニムだけが既定だったので、日本語つきに切り替える
+      if (!(s.cfg && s.cfg.pv)) r.cfg.prompt = 'both';
+      return r;
+    }
   } catch (e) { /* 読めなければ新規 */ }
   return blank();
 }
+// LINEなどのアプリ内ブラウザ・プライベートブラウズでは記録が消えやすいので、ホームで知らせる
+const STORE_OK = (() => { try { localStorage.setItem('synotore:t', '1'); localStorage.removeItem('synotore:t'); return true; } catch (e) { return false; } })();
+const UA = navigator.userAgent;
+const IN_APP = /\bLine\/|FBAN|FBAV|Instagram|MicroMessenger|Twitter|TikTok|musical_ly|BytedanceWebview|KAKAOTALK|YJApp/i.test(UA);
+const IS_LINE = /\bLine\//i.test(UA);
+const STANDALONE = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 let S = load();
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('保存できませんでした'); } }
+let Q = null; // 出題中のセッション
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('保存できませんでした'); } saveQ(); }
+// 解いている途中の問題（アプリが閉じられても続きから再開できるように）
+const QKEY = 'synotore:q';
+function saveQ() {
+  try {
+    if (Q && !Q.over && Q.i < Q.items.length) {
+      localStorage.setItem(QKEY, JSON.stringify({ o: Q.o, i: Q.i, sec: Q.sec, items: Q.items.map(it => ({ id: it.w.id, kind: it.kind, done: !!it.done, ok: !!it.ok, given: it.given || '', hinted: !!it.hinted })) }));
+    } else localStorage.removeItem(QKEY);
+  } catch (e) { /* 保存できなくても続ける */ }
+}
+function resumeQ() {
+  try {
+    const r = JSON.parse(localStorage.getItem(QKEY));
+    if (!r || !r.items || !r.items.every(it => BY[it.id])) return false;
+    Q = { o: r.o, i: r.i, sec: r.sec || 0, test: !!r.o.test, items: r.items.map(it => Object.assign({}, it, { w: BY[it.id] })) };
+    if (Q.items[Q.i] && Q.items[Q.i].done) Q.i++;
+    $('#ov').hidden = false; document.body.classList.add('lock');
+    if (Q.i >= Q.items.length) renderResult(); else { renderQ(); toast('前回の続きから再開します'); }
+    return true;
+  } catch (e) { return false; }
+}
 
 // 単語ごとの記録：lv 0〜4（入力で正解すると3以上＝習得）, c 正解数, x ミス数, t 最終回答, ok 最後の正誤, star 要チェック
 const st = id => S.w[id] || { lv: 0, c: 0, x: 0 };
@@ -89,10 +121,11 @@ let lastAct = Date.now();
 setInterval(() => {
   if (!Q || document.hidden || Date.now() - lastAct > 90000) return;
   day().s++; Q.sec++;
-  if (Q.sec % 10 === 0) save();
+  if (Q.sec % 5 === 0) save();
   const t = $('#qtime'); if (t) t.textContent = fmtClock(Q.sec);
 }, 1000);
 addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+addEventListener('pagehide', save);
 
 function studyDays() { return Object.keys(S.day).filter(d => S.day[d].n > 0 || S.day[d].s >= 30).sort(); }
 function streak() {
@@ -163,6 +196,7 @@ function homeHTML() {
       : `<div class="d">✓</div><div class="grow"><div class="bold">テスト日（${mdw(S.cfg.testDate)}）を過ぎました</div><div class="small muted">右上の⚙︎で次のテスト日を設定できます</div></div>`;
   return `
   <div class="page-h"><h1>シノトレ</h1><button class="icbtn tap" data-a="settings" aria-label="設定">${IC.gear}</button></div>
+  ${warnHTML()}
   <div class="card count">${countTxt}</div>
 
   <div class="card hero mt12">
@@ -202,6 +236,13 @@ function homeHTML() {
   <div class="card list">${SETS.map(setRow).join('')}</div>
   <p class="tiny muted center mt16">記録はこの端末のブラウザに保存されます</p>`;
 }
+function warnHTML() {
+  if (!STORE_OK) return `<div class="card warn"><b>⚠️ 記録が保存できません</b><p>プライベートブラウズになっていませんか？ 通常のタブで開いてください。</p></div>`;
+  if (IN_APP) return `<div class="card warn"><b>⚠️ この画面だと記録が消えることがあります</b>
+    <p>${IS_LINE ? 'LINE' : 'アプリ'}の中のブラウザで開いています。Safari（Androidは Chrome）で開き直して、ホーム画面に追加して使ってください。</p>
+    ${IS_LINE ? `<a class="btn primary block mt8" href="${location.pathname}?openExternalBrowser=1">Safariで開き直す</a>` : '<p class="small">右上（または右下）の「…」→「ブラウザで開く」</p>'}</div>`;
+  return '';
+}
 function chartHTML() {
   // テスト日が2週間以内なら、テスト日までを右端に並べる（先の日は空欄）
   const t = today(), left = daysUntil(S.cfg.testDate);
@@ -240,7 +281,7 @@ function setRow(s) {
 
 /* ---------- 練習 ---------- */
 const STYLE = [['auto', 'おまかせ'], ['mc', '4択'], ['type', '入力'], ['card', 'カード']];
-const PROMPT = [['syn', 'シノニム'], ['both', 'シノニム＋日本語'], ['ja', '日本語']];
+const PROMPT = [['both', 'シノニム＋日本語'], ['syn', 'シノニムだけ'], ['ja', '日本語だけ']];
 const ORDER = [['weak', '苦手優先'], ['rand', 'ランダム'], ['seq', '番号順']];
 const COUNT = [[10, '10問'], [25, '25問'], [50, '50問'], [0, '全部']];
 const KIND = { mc: '4択', type: '入力', card: 'カード' };
@@ -272,7 +313,7 @@ function practiceHTML() {
 
   <div class="opt-h">問題文</div>
   ${segCtl('prompt', PROMPT)}
-  <p class="note">テスト本番はシノニムから答えます。日本語は答えたあとに毎回表示されます</p>
+  <p class="note">本番形式テストもこの設定で出ます。「シノニムだけ」にすると難しめの練習に。どれでも答えたあとに日本語が出ます</p>
 
   <div class="opt-h">出題順</div>
   ${segCtl('order', ORDER)}
@@ -281,7 +322,7 @@ function practiceHTML() {
 
   <button class="btn primary block mt16" data-a="start" ${ids.length ? '' : 'disabled'}>スタート（${n}問）</button>
 
-  <div class="sec-h">本番形式テスト（1セット25問・番号順・入力）</div>
+  <div class="sec-h">本番形式テスト（1セット25問・番号順・入力・問題文は上の設定）</div>
   <div class="card list">${SETS.map(setRow).join('')}</div>`;
 }
 
@@ -390,13 +431,20 @@ function settingsSheet() {
       <b>習得のしくみ</b><br>
       正解するとレベルが上がり、4択・カードでは「覚え中」まで。本番と同じ入力で正解を重ねると「習得」です。間違えるとレベル0に戻り「苦手」に入ります。
     </div>
+    <div class="sec-h">記録のバックアップ</div>
+    <div class="card pad small">
+      いまの記録：${Object.keys(S.w).length}語に解答・勉強した日 ${studyDays().length}日<br>
+      <span class="muted">記録はこの端末の${STANDALONE ? 'ホーム画面のアプリ' : 'ブラウザ'}の中に保存されます。Safariとホーム画面のアプリでは記録が別々です。機種変更やブラウザを変えるときはバックアップを使ってください。</span>
+      <div class="row2 mt12"><button class="btn soft sm" data-a="backup">コピーする</button><button class="btn gray sm" data-a="restore">貼り付けて復元</button></div>
+      <textarea id="bk" class="bk" rows="3" placeholder="バックアップの文字をここに貼り付け" hidden></textarea>
+      <button class="btn primary block sm mt8" data-a="restoreGo" id="restoreGo" hidden>この内容で復元する</button>
+    </div>
     <button class="btn danger block mt16" data-a="reset">記録をすべて消す</button>
     <button class="btn gray block mt8" data-a="close">閉じる</button>`);
   $('#testDate').addEventListener('change', e => { if (e.target.value) { S.cfg.testDate = e.target.value; save(); render(); } });
 }
 
 /* ---------- 出題 ---------- */
-let Q = null;
 
 function pick(ids, n, order) {
   const ws = ids.map(id => BY[id]);
@@ -437,7 +485,7 @@ function hintText(word) { return word.split('').map((ch, i) => i === 0 || ch ===
 
 function renderQ() {
   const it = Q.items[Q.i], w = it.w;
-  const p = Q.o.prompt || 'syn';
+  const p = Q.o.prompt || 'both';
   const showSyn = p !== 'ja', jaTop = p !== 'syn';
   $('#ov').innerHTML = `<div class="ov-in">
     <div class="qtop">
@@ -460,6 +508,7 @@ function renderQ() {
     <div id="ans">${ansHTML(it)}</div>
   </div>`;
   $('#ov').scrollTop = 0;
+  saveQ();
   const ti = $('#ti'); if (ti) ti.focus();
 }
 function ansHTML(it) {
@@ -509,7 +558,9 @@ function next() {
   renderQ();
 }
 function renderResult() {
+  Q.over = true;
   save();
+  try { localStorage.removeItem(QKEY); } catch (e) { /* なし */ }
   const items = Q.items.filter(i => i.done);
   const n = items.length, k = items.filter(i => i.ok).length;
   const wrong = items.filter(i => !i.ok);
@@ -537,6 +588,7 @@ function renderResult() {
 function closeOv() {
   save();
   Q = null;
+  saveQ();
   $('#ov').hidden = true; $('#ov').innerHTML = '';
   document.body.classList.remove('lock');
   render();
@@ -568,10 +620,28 @@ document.addEventListener('click', e => {
     case 'sets': S.cfg.sets = SETS.map(s => s.id).filter(id => b.dataset.v === 'all' || id[0] === b.dataset.v); save(); render(); break;
     case 'toggleset': { const id = b.dataset.set; const on = S.cfg.sets.includes(id); S.cfg.sets = on ? S.cfg.sets.filter(x => x !== id) : [...S.cfg.sets, id]; save(); render(); break; }
     case 'start': startSession({ title: '練習', ids: selIds(), n: S.cfg.count, order: S.cfg.order, style: S.cfg.style, prompt: S.cfg.prompt }); break;
-    case 'settest': startSession({ title: `${SET[b.dataset.set].name} 本番形式テスト`, ids: SET[b.dataset.set].words.map(w => w.id), order: 'seq', test: true, setId: b.dataset.set, prompt: 'syn' }); break;
+    case 'settest': startSession({ title: `${SET[b.dataset.set].name} 本番形式テスト`, ids: SET[b.dataset.set].words.map(w => w.id), order: 'seq', test: true, setId: b.dataset.set, prompt: S.cfg.prompt }); break;
     case 'setpractice': startSession({ title: SET[b.dataset.set].name, ids: SET[b.dataset.set].words.map(w => w.id), n: 25, order: 'weak', style: S.cfg.style, prompt: S.cfg.prompt }); break;
     case 'setwords': UI.set = b.dataset.set; UI.q = ''; tab = 'words'; closeSheet(); render(); scrollTo(0, 0); break;
     case 'autospeak': S.cfg.autoSpeak = !S.cfg.autoSpeak; save(); b.classList.toggle('on', S.cfg.autoSpeak); break;
+    case 'backup': {
+      const txt = JSON.stringify(S);
+      const done = () => toast('コピーしました。メモ帳などに貼って保存してください');
+      if (navigator.clipboard) navigator.clipboard.writeText(txt).then(done, () => showBk(txt));
+      else showBk(txt);
+      break;
+    }
+    case 'restore': $('#bk').hidden = false; $('#restoreGo').hidden = false; $('#bk').value = ''; $('#bk').focus(); break;
+    case 'restoreGo': {
+      let r = null;
+      try { r = JSON.parse($('#bk').value.trim()); } catch (e) { /* 下で知らせる */ }
+      if (!r || r.v !== 1 || !r.w) { toast('バックアップの文字を正しく読めませんでした'); break; }
+      if (!confirm('今の記録をバックアップの内容に置きかえます。よろしいですか？')) break;
+      const b = blank();
+      S = Object.assign(b, r, { cfg: Object.assign(b.cfg, r.cfg) });
+      save(); closeSheet(); render(); toast('復元しました');
+      break;
+    }
     case 'reset':
       if (confirm('正解・ミスの記録、勉強時間、テストの点数をすべて消します。よろしいですか？')) { const cfg = S.cfg; S = blank(); S.cfg = cfg; save(); closeSheet(); render(); toast('記録を消しました'); }
       break;
@@ -631,8 +701,12 @@ document.addEventListener('pointerup', () => { if (pressT && pressT !== 'fired')
 document.addEventListener('click', e => { if (pressT === 'fired') { e.stopImmediatePropagation(); pressT = null; } }, true);
 $('#sheetBack').addEventListener('click', closeSheet);
 
+function showBk(txt) { const t = $('#bk'); t.hidden = false; t.value = txt; t.select(); toast('自動でコピーできませんでした。表示された文字を全部選んでコピーしてください'); }
 let toastT;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2000); }
 
 render();
+resumeQ();
+// ブラウザに「この記録は消さないで」と頼む（対応している端末のみ）
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js');
