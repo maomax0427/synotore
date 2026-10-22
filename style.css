@@ -277,3 +277,37 @@ body.lock { overflow: hidden; }
 .warn p { margin: 4px 0 0; font-size: 13.5px; }
 a.btn { text-decoration: none; }
 .bk { width: 100%; margin-top: 10px; border: 0; border-radius: 10px; background: var(--field); padding: 10px; font-size: 16px; font-family: ui-monospace, Menlo, monospace; resize: vertical; }
+
+/* ---------- 単語カード ---------- */
+.go.alt { background: var(--accent-soft); color: var(--accent); }
+.deckbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.deckbar .cnt { min-width: 74px; height: 34px; border-radius: 17px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-weight: 800; font-size: 16px; padding: 0 12px; }
+.deckbar .cnt small { font-size: 11px; font-weight: 700; }
+.deckbar .cnt.ng { background: var(--red-soft); color: var(--red); }
+.deckbar .cnt.ok { background: var(--green-soft); color: var(--green); }
+.fc-tg { height: 34px; padding: 0 12px; border-radius: 17px; background: var(--field); font-size: 13px; font-weight: 700; }
+.fc { position: relative; height: min(56vh, 440px); min-height: 300px; margin-top: 12px; perspective: 1400px; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: pointer; transition: transform .25s; }
+.fc-in { position: relative; width: 100%; height: 100%; transition: transform .45s cubic-bezier(.3,.7,.3,1); transform-style: preserve-3d; }
+.fc.flip .fc-in { transform: rotateY(180deg); }
+.fc-face {
+  position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  background: var(--card); border-radius: 22px; box-shadow: 0 2px 6px rgba(0,0,0,.06), 0 10px 30px rgba(0,0,0,.08);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 48px 20px 40px;
+  border: 2px solid transparent; transition: border-color .15s;
+}
+.fc-back { transform: rotateY(180deg); }
+.fc-meta { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; gap: 6px; }
+.fc-word { font-size: 42px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; word-break: break-word; }
+.fc-word.long { font-size: 32px; }
+.fc-sub { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.fc-mini { font-size: 15px; font-weight: 800; color: var(--sub); margin-bottom: 10px; }
+.fc-syn { font-size: 20px; font-weight: 700; line-height: 1.4; word-break: break-word; }
+.fc-syn .eq { color: var(--accent); }
+.fc-ja { font-size: 17px; margin-top: 12px; line-height: 1.5; }
+.fc-tip { position: absolute; bottom: 14px; left: 0; right: 0; font-size: 12px; color: var(--sub); }
+.sw-lbl { position: absolute; top: 18px; padding: 4px 12px; border-radius: 10px; font-weight: 800; font-size: 18px; border: 3px solid; opacity: 0; pointer-events: none; transition: opacity .1s; background: var(--card); }
+.sw-lbl.ok { left: 18px; color: var(--green); transform: rotate(-10deg); }
+.sw-lbl.ng { right: 18px; color: var(--red); transform: rotate(10deg); }
+.fc[data-sw="ok"] .sw-lbl.ok, .fc[data-sw="ng"] .sw-lbl.ng { opacity: 1; }
+.fc[data-sw="ok"] .fc-face { border-color: var(--green); }
+.fc[data-sw="ng"] .fc-face { border-color: var(--red); }

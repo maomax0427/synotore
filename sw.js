@@ -1,5 +1,5 @@
 // アプリ本体をキャッシュして、電車の中など電波が弱くても勉強できるようにする。
-const CACHE = 'synotore-v2';
+const CACHE = 'synotore-v3';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'data/words.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {

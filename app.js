@@ -33,7 +33,7 @@ const fmtClock = sec => `${Math.floor(sec / 60)}:${pad2(sec % 60)}`;
 function blank() {
   return {
     v: 1, w: {}, day: {}, tests: {},
-    cfg: { pv: 2, testDate: TEST_DEFAULT, sets: SETS.map(s => s.id), style: 'auto', prompt: 'both', order: 'weak', count: 10, autoSpeak: false },
+    cfg: { pv: 2, testDate: TEST_DEFAULT, sets: SETS.map(s => s.id), style: 'auto', prompt: 'both', order: 'weak', count: 10, autoSpeak: false, cardFront: 'word', cardOrder: 'seq' },
   };
 }
 function load() {
@@ -62,7 +62,7 @@ const QKEY = 'synotore:q';
 function saveQ() {
   try {
     if (Q && !Q.over && Q.i < Q.items.length) {
-      localStorage.setItem(QKEY, JSON.stringify({ o: Q.o, i: Q.i, sec: Q.sec, items: Q.items.map(it => ({ id: it.w.id, kind: it.kind, done: !!it.done, ok: !!it.ok, given: it.given || '', hinted: !!it.hinted })) }));
+      localStorage.setItem(QKEY, JSON.stringify({ o: Q.o, i: Q.i, sec: Q.sec, round: Q.round, rec: Q.rec, all: Q.all, items: Q.items.map(it => ({ id: it.w.id, kind: it.kind, done: !!it.done, ok: !!it.ok, given: it.given || '', hinted: !!it.hinted })) }));
     } else localStorage.removeItem(QKEY);
   } catch (e) { /* 保存できなくても続ける */ }
 }
@@ -70,10 +70,10 @@ function resumeQ() {
   try {
     const r = JSON.parse(localStorage.getItem(QKEY));
     if (!r || !r.items || !r.items.every(it => BY[it.id])) return false;
-    Q = { o: r.o, i: r.i, sec: r.sec || 0, test: !!r.o.test, items: r.items.map(it => Object.assign({}, it, { w: BY[it.id] })) };
+    Q = { o: r.o, i: r.i, sec: r.sec || 0, round: r.round || 1, rec: r.rec || [], all: r.all || r.items.map(it => it.id), test: !!r.o.test, items: r.items.map(it => Object.assign({}, it, { w: BY[it.id] })) };
     if (Q.items[Q.i] && Q.items[Q.i].done) Q.i++;
     $('#ov').hidden = false; document.body.classList.add('lock');
-    if (Q.i >= Q.items.length) renderResult(); else { renderQ(); toast('前回の続きから再開します'); }
+    if (Q.i >= Q.items.length) (Q.o.deck ? deckEnd() : renderResult()); else { renderQ(); toast('前回の続きから再開します'); }
     return true;
   } catch (e) { return false; }
 }
@@ -209,7 +209,12 @@ function homeHTML() {
     </div>
   </div>
 
-  <button class="go tap mt12" data-a="quick">
+  <button class="go tap mt12" data-a="decksheet">
+    <div class="k">まずはここから</div>
+    <div class="t">🃏 単語カードで覚える</div>
+    <div class="s">表に英単語、タップでめくると意味。覚えたら右、まだなら左へ</div>
+  </button>
+  <button class="go alt tap mt12" data-a="quick">
     <div class="k">スキマ時間に（約2分）</div>
     <div class="t">クイック10問 ▶︎</div>
     <div class="s">苦手・まだ覚えていない単語から優先して出ます</div>
@@ -308,7 +313,7 @@ function practiceHTML() {
     auto: 'はじめての単語はカード → 4択 → 入力と、覚え具合に合わせて変わります',
     mc: '4つの中から選びます。4択の正解は「覚え中」まで',
     type: '本番と同じく英単語を入力。正解を重ねると「習得」になります',
-    card: 'カードをめくって、覚えたかどうかを自分で判定します',
+    card: 'Quizletのような単語カード。タップでめくって、覚えたら右・まだなら左へ。まだのカードは何周でもくり返せます',
   }[S.cfg.style]}</p>
 
   <div class="opt-h">問題文</div>
@@ -340,6 +345,7 @@ function weakHTML() {
     <button class="btn primary" data-a="weakgo">苦手を練習（${Math.min(ws.length, 20)}問）</button>
     <button class="btn soft" data-a="weakmc">4択でやさしく</button>
   </div>
+  <button class="btn gray block mt8" data-a="deck" data-v="weak">🃏 カードで見直す</button>
   <p class="note">入力（本番形式）で2〜3回続けて正解すると「習得」になり、リストから外れます</p>
   <div class="card list wl mt12">${ws.map(w => wordRow(w, true)).join('')}</div>`;
 }
@@ -412,9 +418,10 @@ function setSheet(id) {
     <h2>${s.name}</h2>
     <div class="small muted">進み具合 ${pct(s.words)}% ・ 習得 ${c.done}/25 ・ 苦手 ${c.weak}</div>
     ${segBar(c, 25)}
-    <button class="btn primary block mt16" data-a="settest" data-set="${id}">本番形式テスト（25問・入力）</button>
+    <button class="btn primary block mt16" data-a="deck" data-v="${id}">🃏 カードで覚える（25枚）</button>
+    <button class="btn soft block mt8" data-a="settest" data-set="${id}">本番形式テスト（25問・入力）</button>
     <div class="row2 mt8">
-      <button class="btn soft" data-a="setpractice" data-set="${id}">このセットを練習</button>
+      <button class="btn gray" data-a="setpractice" data-set="${id}">4択・入力で練習</button>
       <button class="btn gray" data-a="setwords" data-set="${id}">単語を見る</button>
     </div>
     <div class="sec-h">テストの記録（Date / Score）</div>
@@ -443,6 +450,147 @@ function settingsSheet() {
     <button class="btn gray block mt8" data-a="close">閉じる</button>`);
   $('#testDate').addEventListener('change', e => { if (e.target.value) { S.cfg.testDate = e.target.value; save(); render(); } });
 }
+
+/* ---------- 単語カード ---------- */
+const CARD_FRONT = [['word', '英単語'], ['mean', '意味（シノニム＋日本語）']];
+const CARD_ORDER = [['seq', '番号順'], ['rand', 'シャッフル']];
+function deckSheet() {
+  const nw = ALL.filter(w => status(w.id) === 'new'), wk = weakWords();
+  const row = (v, ttl, sub) => `<button class="li tap" data-a="deck" data-v="${v}"><div class="grow"><div class="ttl">${ttl}</div><div class="small muted">${sub}</div></div><span class="chev">${IC.chev}</span></button>`;
+  openSheet(`
+    <h2>🃏 単語カード</h2>
+    <p class="small muted" style="margin:4px 0 0">表に英単語、タップでめくると意味。覚えたら右へ、まだなら左へスワイプ（ボタンでもOK）。「まだ」のカードは全部覚えるまでくり返せます。</p>
+    <div class="opt-h">表に出すもの</div>
+    ${segCtl('cardFront', CARD_FRONT)}
+    <div class="opt-h">順番</div>
+    ${segCtl('cardOrder', CARD_ORDER)}
+    <div class="sec-h">どのカードで？</div>
+    <div class="card list">
+      ${nw.length ? row('new', 'まだ見ていない単語', `${Math.min(25, nw.length)}枚（未学習 ${nw.length}語から）`) : ''}
+      ${wk.length ? row('weak', '苦手な単語', `${wk.length}枚`) : ''}
+      ${SETS.map(s => row(s.id, s.name, `25枚 ・ 習得 ${counts(s.words).done}/25`)).join('')}
+    </div>
+    <button class="btn gray block mt16" data-a="close">閉じる</button>`);
+}
+function startDeck(v) {
+  const ids = v === 'new' ? ALL.filter(w => status(w.id) === 'new').map(w => w.id).slice(0, 25)
+    : v === 'weak' ? weakWords().map(w => w.id)
+      : SET[v].words.map(w => w.id);
+  const title = v === 'new' ? '未学習の単語カード' : v === 'weak' ? '苦手の単語カード' : `${SET[v].name} 単語カード`;
+  startSession({ title, ids, order: S.cfg.cardOrder, style: 'card', prompt: S.cfg.prompt });
+}
+function renderCard() {
+  const it = Q.items[Q.i], w = it.w, deck = Q.o.deck;
+  const front = S.cfg.cardFront === 'mean' ? 'mean' : 'word';
+  const okN = Q.items.filter(i => i.done && i.ok).length, ngN = Q.items.filter(i => i.done && !i.ok).length;
+  const meta = `<div class="fc-meta"><span class="pill">${SET[w.set].name} · ${w.n}</span>${Q.rec && Q.rec.includes(w.id) ? '' : STATUS[status(w.id)][1] ? `<span class="pill ${STATUS[status(w.id)][1]}">${STATUS[status(w.id)][0]}</span>` : ''}</div>`;
+  const wordSide = `<div class="fc-word ${w.w.length > 11 ? 'long' : ''}">${esc(w.w)}</div><div class="fc-sub"><span class="pill">${w.pos}</span>${spkBtn(w.w)}</div>`;
+  const meanSide = `<div class="fc-syn"><span class="eq">(=</span> ${esc(w.syn)}<span class="eq">)</span></div><div class="fc-ja">${esc(w.ja)}</div>${w.hint ? `<div class="mt8"><span class="pill gd">頭文字 ${w.hint}</span></div>` : ''}`;
+  $('#ov').innerHTML = `<div class="ov-in">
+    <div class="qtop">
+      <button class="x tap" data-a="quit" aria-label="やめる">${IC.x}</button>
+      <div class="qprog"><i style="width:${Q.i / Q.items.length * 100}%"></i></div>
+      <span class="num small bold">${Q.i + 1}/${Q.items.length}</span>
+      <span class="num small muted" id="qtime">${fmtClock(Q.sec)}</span>
+    </div>
+    ${deck ? `<div class="deckbar">
+      <span class="cnt ng num">${ngN}<small>まだ</small></span>
+      <button class="fc-tg tap" data-a="cardfront">表：${front === 'word' ? '英単語' : '意味'} ⇄</button>
+      <span class="cnt ok num">${okN}<small>覚えた</small></span>
+    </div>${Q.round > 1 ? `<div class="tiny muted center">${Q.round}周目（まだのカードだけ）</div>` : ''}` : ''}
+    <div class="fc" id="fc">
+      <div class="fc-in">
+        <div class="fc-face fc-front">${meta}${front === 'word' ? wordSide : meanSide}<div class="fc-tip">タップでめくる</div></div>
+        <div class="fc-face fc-back">${meta}${front === 'word' ? `<div class="fc-mini">${esc(w.w)}</div>${meanSide}` : wordSide}</div>
+      </div>
+      <div class="sw-lbl ok">覚えた ◯</div><div class="sw-lbl ng">✕ まだ</div>
+    </div>
+    <div class="row2 mt16"><button class="btn danger" data-a="cardng">✕ まだ</button><button class="btn green" data-a="cardok">◯ 覚えた</button></div>
+    <p class="note center">カードを左右にスワイプしても仕分けできます</p>
+  </div>`;
+  $('#ov').scrollTop = 0;
+  saveQ();
+  if (S.cfg.autoSpeak && front === 'word') speak(w.w);
+}
+function flipCard() {
+  const fc = $('#fc'); if (!fc) return;
+  fc.classList.toggle('flip');
+  if (S.cfg.autoSpeak && S.cfg.cardFront === 'mean' && fc.classList.contains('flip')) speak(Q.items[Q.i].w.w);
+}
+function swipeOut(ok) {
+  const it = Q && Q.items[Q.i];
+  if (!it || it.done || Q.busy) return;
+  Q.busy = true;
+  const fc = $('#fc');
+  if (fc) {
+    fc.dataset.sw = ok ? 'ok' : 'ng';
+    fc.style.transition = 'transform .22s ease-in, opacity .22s ease-in';
+    fc.style.transform = `translateX(${ok ? 130 : -130}%) rotate(${ok ? 14 : -14}deg)`;
+    fc.style.opacity = '0';
+  }
+  setTimeout(() => { Q.busy = false; cardJudge(ok); }, 210);
+}
+function cardJudge(ok) {
+  const it = Q.items[Q.i];
+  if (it.done) return;
+  it.done = true; it.ok = ok;
+  // 単語カードでは、同じ単語は最初の1回だけ記録（2周目以降は練習）
+  if (!Q.o.deck || !Q.rec.includes(it.w.id)) { record(it.w.id, ok, 'card'); if (Q.o.deck) Q.rec.push(it.w.id); }
+  next();
+}
+function deckEnd() {
+  Q.over = true;
+  save();
+  try { localStorage.removeItem(QKEY); } catch (e) { /* なし */ }
+  const n = Q.items.length, ng = Q.items.filter(i => !i.ok), k = n - ng.length;
+  $('#ov').innerHTML = `<div class="ov-in">
+    <div class="qtop"><button class="x tap" data-a="closeov" aria-label="閉じる">${IC.x}</button><div class="grow bold">${esc(Q.o.title)}</div></div>
+    <div class="card res">
+      ${ng.length ? `<div class="sc num">${k}<small> / ${n}</small></div><div class="msg">覚えた！ あと${ng.length}枚</div>` : `<div class="sc">🎉</div><div class="msg">${Q.round > 1 ? `${Q.round}周で` : ''}全部覚えた！</div>`}
+      <div class="small muted mt8">${Q.round}周目 ・ 勉強時間 ${fmtClock(Q.sec)}</div>
+      ${ng.length ? '' : '<div class="small mt12">次は4択や入力で、シノニムから思い出せるか確かめよう</div>'}
+    </div>
+    ${ng.length ? `<div class="sec-h">まだのカード（${ng.length}）</div><div class="card list wl">${ng.map(i => wordRow(i.w, true)).join('')}</div>` : ''}
+    <div class="mt16">
+      ${ng.length ? `<button class="btn primary block" data-a="deckagain">まだの${ng.length}枚をもう一度</button>` : `<button class="btn primary block" data-a="deckcheck">この単語を4択・入力で確かめる</button>`}
+      <button class="btn soft block mt8" data-a="again">全部のカードを最初から</button>
+      <button class="btn gray block mt8" data-a="closeov">ホームへ</button>
+    </div>
+  </div>`;
+  $('#ov').scrollTop = 0;
+}
+
+// スワイプ：右＝覚えた、左＝まだ。ほとんど動かさずに離したらめくる
+let drag = null;
+document.addEventListener('pointerdown', e => {
+  const fc = e.target.closest('#fc');
+  if (!fc || e.target.closest('.spk') || Q?.busy) return;
+  drag = { x: e.clientX, y: e.clientY, dx: 0, el: fc };
+  fc.style.transition = 'none';
+});
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  drag.dx = e.clientX - drag.x;
+  if (Math.abs(drag.dx) < 6) return;
+  drag.el.style.transform = `translateX(${drag.dx}px) rotate(${drag.dx / 22}deg)`;
+  drag.el.dataset.sw = drag.dx > 40 ? 'ok' : drag.dx < -40 ? 'ng' : '';
+});
+function endDrag(e, cancel) {
+  if (!drag) return;
+  const d = drag; drag = null;
+  d.el.style.transition = '';
+  if (!cancel && Math.abs(d.dx) > 90) return swipeOut(d.dx > 0);
+  d.el.style.transform = ''; d.el.dataset.sw = '';
+  if (!cancel && Math.abs(d.dx) < 6 && Math.abs(e.clientY - d.y) < 10) flipCard();
+}
+document.addEventListener('pointerup', e => endDrag(e, false));
+document.addEventListener('pointercancel', e => endDrag(e, true));
+document.addEventListener('keydown', e => {
+  if (!Q || Q.over || !$('#fc') || e.target.closest('input, textarea')) return;
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flipCard(); }
+  else if (e.key === 'ArrowRight') swipeOut(true);
+  else if (e.key === 'ArrowLeft') swipeOut(false);
+});
 
 /* ---------- 出題 ---------- */
 
@@ -473,7 +621,8 @@ function startSession(o) {
   const n = o.n || o.ids.length;
   const ws = pick(o.ids, n, o.order);
   if (!ws.length) return toast('出題できる単語がありません');
-  Q = { o, items: ws.map(w => ({ w, kind: o.test ? 'type' : kindFor(w, o.style) })), i: 0, sec: 0, test: !!o.test };
+  if (o.style === 'card' && !o.test) o.deck = true;
+  Q = { o, items: ws.map(w => ({ w, kind: o.test ? 'type' : kindFor(w, o.style) })), i: 0, sec: 0, round: 1, rec: [], all: ws.map(w => w.id), test: !!o.test };
   closeSheet();
   $('#ov').hidden = false; document.body.classList.add('lock');
   renderQ();
@@ -485,6 +634,7 @@ function hintText(word) { return word.split('').map((ch, i) => i === 0 || ch ===
 
 function renderQ() {
   const it = Q.items[Q.i], w = it.w;
+  if (it.kind === 'card') return renderCard();
   const p = Q.o.prompt || 'both';
   const showSyn = p !== 'ja', jaTop = p !== 'syn';
   $('#ov').innerHTML = `<div class="ov-in">
@@ -554,7 +704,7 @@ function answer(ok, given) {
 }
 function next() {
   Q.i++;
-  if (Q.i >= Q.items.length) return renderResult();
+  if (Q.i >= Q.items.length) return Q.o.deck ? deckEnd() : renderResult();
   renderQ();
 }
 function renderResult() {
@@ -616,7 +766,13 @@ document.addEventListener('click', e => {
     case 'star': { const s = S.w[b.dataset.id] || (S.w[b.dataset.id] = { lv: 0, c: 0, x: 0 }); s.star = !s.star; save(); wordSheet(b.dataset.id); render(); break; }
     case 'speak': e.stopPropagation(); speak(b.dataset.w); break;
     case 'hide': UI.hide = !UI.hide; render(); break;
-    case 'cfg': { const k = b.dataset.k; S.cfg[k] = k === 'count' ? Number(b.dataset.v) : b.dataset.v; save(); render(); break; }
+    case 'cfg': {
+      const k = b.dataset.k;
+      S.cfg[k] = k === 'count' ? Number(b.dataset.v) : b.dataset.v;
+      save();
+      if (k === 'cardFront' || k === 'cardOrder') deckSheet(); else render();
+      break;
+    }
     case 'sets': S.cfg.sets = SETS.map(s => s.id).filter(id => b.dataset.v === 'all' || id[0] === b.dataset.v); save(); render(); break;
     case 'toggleset': { const id = b.dataset.set; const on = S.cfg.sets.includes(id); S.cfg.sets = on ? S.cfg.sets.filter(x => x !== id) : [...S.cfg.sets, id]; save(); render(); break; }
     case 'start': startSession({ title: '練習', ids: selIds(), n: S.cfg.count, order: S.cfg.order, style: S.cfg.style, prompt: S.cfg.prompt }); break;
@@ -657,20 +813,19 @@ document.addEventListener('click', e => {
       break;
     }
     case 'giveup': answer(false, ''); break;
-    case 'reveal':
-      if (S.cfg.autoSpeak) speak(it.w.w);
-      $('#ans').innerHTML = `<div class="card fb card-ans">${wordInfo(it.w)}</div>
-        <div class="row2 mt12"><button class="btn red" data-a="cardng">✕ まだ</button><button class="btn green" data-a="cardok">◯ 覚えた</button></div>`;
+    case 'cardok': case 'cardng': swipeOut(a === 'cardok'); break;
+    case 'cardfront': S.cfg.cardFront = S.cfg.cardFront === 'mean' ? 'word' : 'mean'; save(); renderCard(); break;
+    case 'decksheet': deckSheet(); break;
+    case 'deck': startDeck(b.dataset.v); break;
+    case 'deckagain':
+      Q.items = shuffle(Q.items.filter(i => !i.ok)).map(i => ({ w: i.w, kind: 'card' }));
+      Q.i = 0; Q.round++; Q.over = false;
+      renderQ();
       break;
-    case 'cardok': case 'cardng':
-      if (it.done) break;
-      it.done = true; it.ok = a === 'cardok';
-      record(it.w.id, it.ok, 'card');
-      next();
-      break;
+    case 'deckcheck': startSession({ title: 'カードの単語を確かめる', ids: Q.all, order: 'rand', style: 'auto', prompt: S.cfg.prompt }); break;
     case 'next': next(); break;
     case 'quit':
-      if (!Q.items.some(i => i.done)) { closeOv(); break; }
+      if (Q.o.deck || !Q.items.some(i => i.done)) { closeOv(); break; }
       if (confirm('ここで終わりにしますか？（答えた分の記録は保存されています）')) renderResult();
       break;
     case 'closeov': closeOv(); break;
